@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-source ./.env
+source ./env/.env
 
 ./build.sh
 

@@ -1,0 +1,8 @@
+# 1. Install https://chromewebstore.google.com/detail/cclelndahbckbenkjhflpdbgdldlbecc
+# 2. Go to youtube https://www.youtube.com/watch?v=dQw4w9WgXcQ
+# 3. Click on extension and "copy"
+# 4. Close all youtube tabs immediately (and don't open, it will invalidate the session)
+# 5. Paste copied session cookies into cookies.txt
+# 5. Upload updated file to bucket https://console.yandex.cloud/folders/b1gjh7irh9poadr6llcg/storage/buckets/ytdl-env
+
+# ...
