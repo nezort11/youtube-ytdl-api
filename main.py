@@ -21,7 +21,7 @@ logger.setLevel(logging.INFO)
 from env import ENV, PROXY_URL, BUCKET_NAME
 
 STORAGE_PATH = "./downloads" if ENV == "development" else "/function/storage/storage"
-ENV_PATH = "." if ENV == "development" else "/function/storage/env"
+ENV_PATH = "env" if ENV == "development" else "/function/storage/env"
 
 COOKIE_PATH = os.path.join(ENV_PATH, 'cookies.txt')
 logger.info(f"COOKIE_PATH: {COOKIE_PATH}")

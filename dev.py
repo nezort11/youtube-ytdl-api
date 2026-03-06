@@ -27,7 +27,7 @@ async def download_video(url: str = Query(..., title="YouTube Video URL")):
         'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s'),
         'format': '18',
         'proxy': PROXY_URL,
-        'cookiefile': 'cookies.txt',
+        'cookiefile': 'env/cookies.txt',
          # 'merge_output_format': 'mp4',
     }
 

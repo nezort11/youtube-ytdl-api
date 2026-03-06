@@ -1,3 +1,4 @@
+.venv
 node_modules*
 build
 *.zip
@@ -20,3 +21,4 @@ __pycache__
 **/*key.json
 downloads
 terraform.tfvars
+

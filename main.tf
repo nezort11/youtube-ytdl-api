@@ -20,7 +20,7 @@ terraform {
 }
 
 provider "yandex" {
-  service_account_key_file = "${path.module}/sakey.json"
+  service_account_key_file = "${path.module}/env/sakey.json"
 #   token     = var.yc_token
   cloud_id  = var.yc_cloud_id
   folder_id = var.yc_folder_id
@@ -74,7 +74,7 @@ resource "yandex_function" "ytdl-function" {
   }
   mounts {
     name = "env"
-    mode = "rw"
+    mode = "ro"
     object_storage {
       bucket = yandex_storage_bucket.ytdl-env.bucket
     }
