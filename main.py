@@ -25,6 +25,10 @@ ENV_PATH = "." if ENV == "development" else "/function/storage/env"
 
 COOKIE_PATH = os.path.join(ENV_PATH, 'cookies.txt')
 logger.info(f"COOKIE_PATH: {COOKIE_PATH}")
+if os.path.exists(COOKIE_PATH):
+    logger.info(f"Cookie file found. Size: {os.path.getsize(COOKIE_PATH)} bytes")
+else:
+    logger.error(f"Cookie file NOT found at {COOKIE_PATH}")
 
 
 # Helper function to build yt-dlp options
@@ -39,6 +43,11 @@ def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None):
         'fragment_retries': 3,  # Retry failed fragments
         'retries': 3,  # Retry failed downloads
         'http_chunk_size': 10485760,  # 10MB chunks for better throughput
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android'], # Use ONLY android as it is most reliable for n-sig
+            }
+        },
     }
 
     # Add PO Token and Visitor Data if available (bypasses bot detection)
@@ -101,7 +110,7 @@ def handler(event, context):
     url = query.get("url")
     fmt = query.get("format")  # Default None -> will use format 18 (360p) fallback
 
-    if not url:
+    if not url and path not in ["/ping"]:
         return {
             "statusCode": 400,
             "body": json.dumps({"error": "Missing 'url' parameter"})
@@ -119,6 +128,8 @@ def handler(event, context):
             # Optional ?limit=5 query parameter
             limit = int(query.get("limit", 5))
             return handle_playlist(url, limit)
+        elif path == "/ping":
+            return handle_ping()
         else:
             return {
                 "statusCode": 404,
@@ -129,6 +140,12 @@ def handler(event, context):
             "statusCode": 500,
             "body": json.dumps({"error": str(e)})
         }
+
+def handle_ping():
+    return {
+        "statusCode": 200,
+        "body": json.dumps({"status": "ok", "message": "pong"})
+    }
 
 def handle_download_url(url, fmt):
     """
