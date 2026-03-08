@@ -1,7 +1,19 @@
-.PHONY: dev build deploy env-push env-pull
+VENV = .venv
+PYTHON = $(VENV)/bin/python
+PIP = $(VENV)/bin/pip
 
-dev:
-	ENV=development BUCKET_NAME=$(shell terraform output -raw ytdl_storage_bucket) ./.venv/bin/python ./dev.py
+.PHONY: setup dev build deploy env-push env-pull
+
+$(VENV)/bin/activate: requirements.txt
+	python3 -m venv $(VENV)
+	$(PIP) install --upgrade pip
+	$(PIP) install -r requirements.txt
+	touch $(VENV)/bin/activate
+
+setup: $(VENV)/bin/activate
+
+dev: setup
+	ENV=development BUCKET_NAME=$(shell terraform output -raw ytdl_storage_bucket) $(PYTHON) ./dev.py
 
 build:
 	./build.sh

@@ -24,6 +24,7 @@ STORAGE_PATH = "./downloads" if ENV == "development" else "/function/storage/sto
 ENV_PATH = "env" if ENV == "development" else "/function/storage/env"
 
 COOKIE_PATH = os.path.join(ENV_PATH, 'cookies.txt')
+
 logger.info(f"COOKIE_PATH: {COOKIE_PATH}")
 if os.path.exists(COOKIE_PATH):
     logger.info(f"Cookie file found. Size: {os.path.getsize(COOKIE_PATH)} bytes")
@@ -32,85 +33,115 @@ else:
 
 
 # Helper function to build yt-dlp options
-def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None):
+def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None, **kwargs):
+    # Start with base defaults
     opts = {
-        'proxy': PROXY_URL,
-        'cookiefile': COOKIE_PATH,
+        'nocheckcookies': True,
         'cachedir': False,
-        'noplaylist': False if playlistend else True,  # allow playlists
-        # Optimize for speed
-        'concurrent_fragment_downloads': 1,  # Download fragments sequentially to avoid IP blocking
-        'fragment_retries': 3,  # Retry failed fragments
-        'retries': 3,  # Retry failed downloads
-        'http_chunk_size': 10485760,  # 10MB chunks for better throughput
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android'], # Use ONLY android as it is most reliable for n-sig
-            }
-        },
+        'noplaylist': False if playlistend else True,
+        'quiet': False,
+        'no_warnings': False,
+        # Speed optimizations
+        'concurrent_fragment_downloads': 5,
+        'fragment_retries': 3,
+        'retries': 3,
+        'http_chunk_size': 10485760,
     }
+
+    # Extract our special toggle flags and custom clients
+    use_proxy_val = kwargs.pop("use_proxy", kwargs.pop("proxy", True))
+    use_proxy = str(use_proxy_val).lower() != "false" if use_proxy_val is not None else True
+    
+    use_cookies_val = kwargs.pop("use_cookies", kwargs.pop("cookies", True))
+    use_cookies = str(use_cookies_val).lower() != "false" if use_cookies_val is not None else True
+    
+    clients_val = kwargs.pop("player_clients", kwargs.pop("clients", None))
+    player_clients = clients_val.split(",") if isinstance(clients_val, str) else clients_val
+
+    # Any other kwarg is a direct yt-dlp option
+    # We try to convert string numbers/booleans to proper types
+    for k, v in kwargs.items():
+        if isinstance(v, str):
+            if v.lower() == "true": opts[k] = True
+            elif v.lower() == "false": opts[k] = False
+            elif v.isdigit(): opts[k] = int(v)
+            else: opts[k] = v
+        else:
+            opts[k] = v
+
+    # Apply sensitive overrides (secrets)
+    if use_proxy and PROXY_URL:
+        opts['proxy'] = PROXY_URL
+    else:
+        opts.pop('proxy', None)
+
+    if use_cookies and COOKIE_PATH:
+        opts['cookiefile'] = COOKIE_PATH
+    else:
+        opts.pop('cookiefile', None)
+
+    # Setup extractor_args
+    opts.setdefault('extractor_args', {})
+    opts['extractor_args'].setdefault('youtube', {})
+    
+    if player_clients:
+        opts['extractor_args']['youtube']['player_client'] = player_clients
+    elif 'player_client' not in opts['extractor_args']['youtube']:
+        # Default fallback clients
+        opts['extractor_args']['youtube']['player_client'] = ['android', 'ios']
 
     # Add PO Token and Visitor Data if available (bypasses bot detection)
     po_token = os.getenv("PO_TOKEN")
     visitor_data = os.getenv("VISITOR_DATA")
 
-    if po_token:
-        logger.info("Using PO Token for YouTube download")
-        opts.setdefault('extractor_args', {})
-        opts['extractor_args']['youtube'] = {
-            'po_token': [po_token],
-            'player_client': ['web'], # PO Token usually requires 'web' client
-        }
-
-        if visitor_data:
-            logger.info("Using Visitor Data for YouTube download")
+    if po_token and 'po_token' not in opts['extractor_args']['youtube']:
+        opts['extractor_args']['youtube']['po_token'] = [po_token]
+        if visitor_data and 'visitor_data' not in opts['extractor_args']['youtube']:
             opts['extractor_args']['youtube']['visitor_data'] = [visitor_data]
 
     if download_path:
         # Use flexible format selector with fallbacks
-        # Priority: format 18 (360p ~10MB) -> 480p or lower -> worst available
-        # This keeps file sizes reasonable (10-30 MB typical) instead of downloading huge HD files
         if fmt and fmt not in ["best", "worst"]:
-            # If specific format requested, try it with fallbacks
             format_selector = f"{fmt}/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/worst"
         else:
-            # Default: prioritize format 18 (360p), fallback to 480p max, then worst
             format_selector = "18/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/worst"
 
         opts.update({
             'outtmpl': download_path,
-            'format': format_selector,
-            # Merge video+audio into single file if needed
-            'merge_output_format': 'mp4',
+            'format': opts.get('format', format_selector), # User can override format
+            'merge_output_format': opts.get('merge_output_format', 'mp4'),
         })
+    elif fmt:
+        opts['format'] = opts.get('format', fmt)
+    
     if playlistend:
         opts['playlistend'] = playlistend
     return opts
 
 def handler(event, context):
     logger.info("Handling request", extra={"event": "request_start", "event_data": event})
-    # logger.debug('context:', context)
 
-    # Support both API Gateway (with path) and direct invocation (no path)
-    path = event.get("path", "/download")  # Default to /download for direct invocation
-
-    # For direct invocation, parameters might be in different places
+    path = event.get("path", "/download")
     query = event.get("queryStringParameters") or {}
 
-    # Also check httpMethod - if POST, body might contain params
     http_method = event.get("httpMethod", "POST")
     if http_method == "POST" and event.get("body"):
         try:
             body = json.loads(event.get("body", "{}"))
-            # Merge body params with query params (body takes precedence)
             query = {**query, **body}
+            if "path" in body:
+                path = body["path"]
         except:
             pass
 
     url = query.get("url")
-    fmt = query.get("format")  # Default None -> will use format 18 (360p) fallback
+    fmt = query.get("format")
 
-    if not url and path not in ["/ping"]:
+    # Everything else in query/body is passed as an override
+    reserved = ["url", "path", "format", "limit"]
+    overrides = {k: v for k, v in query.items() if k not in reserved}
+
+    if not url and path not in ["/ping", "/health/proxy", "/health/cookies", "/health/full", "/health/check", "/health/extraction"]:
         return {
             "statusCode": 400,
             "body": json.dumps({"error": "Missing 'url' parameter"})
@@ -118,18 +149,26 @@ def handler(event, context):
 
     try:
         if path == "/download":
-            return handle_download(url, fmt)
+            return handle_download(url, fmt, **overrides)
         elif path == "/download-url":
-            # New endpoint: returns direct download URL without downloading
-            return handle_download_url(url, fmt)
+            return handle_download_url(url, fmt, **overrides)
         elif path == "/info":
-            return handle_info(url)
+            return handle_info(url, **overrides)
         elif path == "/playlist":
-            # Optional ?limit=5 query parameter
             limit = int(query.get("limit", 5))
             return handle_playlist(url, limit)
         elif path == "/ping":
             return handle_ping()
+        elif path == "/health/proxy":
+            return handle_health_proxy()
+        elif path == "/health/cookies":
+            return handle_health_cookies()
+        elif path == "/health/extraction":
+            return handle_health_extraction()
+        elif path == "/health/check":
+            return handle_health_check(query)
+        elif path == "/health/full":
+            return handle_health_full()
         else:
             return {
                 "statusCode": 404,
@@ -147,7 +186,223 @@ def handle_ping():
         "body": json.dumps({"status": "ok", "message": "pong"})
     }
 
-def handle_download_url(url, fmt):
+def handle_health_proxy():
+    import urllib.request
+    import json
+    if not PROXY_URL:
+        logger.warning("PROXY_URL not configured")
+        return {
+            "statusCode": 200,
+            "body": json.dumps({"status": "warn", "message": "PROXY_URL not configured"})
+        }
+
+    try:
+        # 1. Get IP without proxy
+        # We use a custom opener with no proxies to ensure we get the real IP
+        no_proxy_handler = urllib.request.ProxyHandler({})
+        no_proxy_opener = urllib.request.build_opener(no_proxy_handler)
+        
+        logger.info("Checking IP without proxy...")
+        no_proxy_response = no_proxy_opener.open('https://api.ipify.org?format=json', timeout=10)
+        no_proxy_data = json.loads(no_proxy_response.read().decode())
+        no_proxy_ip = no_proxy_data.get("ip")
+        logger.info(f"IP without proxy: {no_proxy_ip}")
+
+        # 2. Get IP with proxy
+        logger.info(f"Checking IP with proxy: {PROXY_URL}")
+        proxy_handler = urllib.request.ProxyHandler({'http': PROXY_URL, 'https': PROXY_URL})
+        proxy_opener = urllib.request.build_opener(proxy_handler)
+        proxy_response = proxy_opener.open('https://api.ipify.org?format=json', timeout=10)
+        proxy_data = json.loads(proxy_response.read().decode())
+        proxy_ip = proxy_data.get("ip")
+        logger.info(f"IP with proxy: {proxy_ip}")
+
+        if no_proxy_ip == proxy_ip:
+            error_msg = f"Proxy is NOT working! Both IPs are the same: {proxy_ip}"
+            logger.error(error_msg)
+            return {
+                "statusCode": 500, # Return 500 as the proxy check failed to mask IP
+                "body": json.dumps({
+                    "status": "error",
+                    "message": error_msg,
+                    "no_proxy_ip": no_proxy_ip,
+                    "proxy_ip": proxy_ip
+                })
+            }
+
+        logger.info("Proxy is working correctly.")
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "status": "ok",
+                "message": "Proxy is working",
+                "no_proxy_ip": no_proxy_ip,
+                "proxy_ip": proxy_ip
+            })
+        }
+    except Exception as e:
+        error_msg = f"Proxy health check failed: {str(e)}"
+        logger.exception(error_msg)
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"status": "error", "error": error_msg})
+        }
+
+def handle_health_cookies():
+    test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    
+    # Use minimal options to verify cookies
+    health_opts = {
+        'cookiefile': COOKIE_PATH,
+        'proxy': PROXY_URL,
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'nocheckcookies': True,
+        'cachedir': False,
+    }
+
+    try:
+        with YoutubeDL(health_opts) as ydl:
+            # use_extractors to just get basic info
+            info = ydl.extract_info(test_url, download=False, process=False)
+            if info:
+                return {
+                    "statusCode": 200,
+                    "body": json.dumps({
+                        "status": "ok",
+                        "video_title": info.get("title"),
+                        "cookie_file": COOKIE_PATH,
+                        "cookie_file_size": os.path.getsize(COOKIE_PATH) if COOKIE_PATH and os.path.exists(COOKIE_PATH) else 0
+                    })
+                }
+            else:
+                return {
+                    "statusCode": 500,
+                    "body": json.dumps({"status": "error", "message": "Failed to extract info"})
+                }
+    except Exception as e:
+        return {
+            "statusCode": 500,
+            "body": json.dumps({
+                "status": "error",
+                "error": str(e),
+                "cookie_file": COOKIE_PATH,
+                "cookie_file_exists": os.path.exists(COOKIE_PATH) if COOKIE_PATH else False
+            })
+        }
+
+def handle_health_extraction():
+    test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    ydl_opts = get_yt_dlp_opts()
+    
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            # Full extraction including formats
+            info = ydl.extract_info(test_url, download=False, process=True)
+            if info:
+                formats = info.get("formats", [])
+                return {
+                    "statusCode": 200,
+                    "body": json.dumps({
+                        "status": "ok",
+                        "video_title": info.get("title"),
+                        "formats_count": len(formats),
+                        "first_format_id": formats[0].get("format_id") if formats else None
+                    })
+                }
+            else:
+                return {
+                    "statusCode": 500,
+                    "body": json.dumps({"status": "error", "message": "Failed to extract full info"})
+                }
+    except Exception as e:
+        return {
+            "statusCode": 500,
+            "body": json.dumps({
+                "status": "error",
+                "error": str(e)
+            })
+        }
+
+def handle_health_check(query):
+    """
+    Configurable health check via query params:
+    - proxy: true/false (default true)
+    - cookies: true/false (default true)
+    - process: true/false (default true, full extraction)
+    - clients: comma-separated list (e.g. android,web)
+    - url: custom test URL (default Rickroll)
+    """
+    use_proxy = str(query.get("proxy", "true")).lower() == "true"
+    use_cookies = str(query.get("cookies", "true")).lower() == "true"
+    process = str(query.get("process", "true")).lower() == "true"
+    clients_str = query.get("clients")
+    player_clients = clients_str.split(",") if clients_str else None
+    test_url = query.get("url", "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    
+    ydl_opts = get_yt_dlp_opts(
+        use_proxy=use_proxy, 
+        use_cookies=use_cookies, 
+        player_clients=player_clients
+    )
+    
+    config = {
+        "proxy": use_proxy,
+        "cookies": use_cookies,
+        "process": process,
+        "clients": player_clients or "default",
+        "url": test_url
+    }
+    
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(test_url, download=False, process=process)
+            return {
+                "statusCode": 200,
+                "body": json.dumps({
+                    "status": "ok",
+                    "config": config,
+                    "video_title": info.get("title"),
+                    "formats_count": len(info.get("formats", []))
+                })
+            }
+    except Exception as e:
+        return {
+            "statusCode": 200, # Still 200 because it's a diagnostic tool
+            "body": json.dumps({
+                "status": "error",
+                "config": config,
+                "error": str(e)
+            })
+        }
+
+def handle_health_full():
+    proxy_res = handle_health_proxy()
+    cookies_res = handle_health_cookies()
+    extraction_res = handle_health_extraction()
+
+    proxy_data = json.loads(proxy_res["body"])
+    cookies_data = json.loads(cookies_res["body"])
+    extraction_data = json.loads(extraction_res["body"])
+
+    status = "ok"
+    if any(d.get("status") == "error" for d in [proxy_data, cookies_data, extraction_data]):
+        status = "error"
+    elif any(d.get("status") == "warn" for d in [proxy_data, cookies_data, extraction_data]):
+        status = "warn"
+
+    return {
+        "statusCode": 200 if status != "error" else 500,
+        "body": json.dumps({
+            "status": status,
+            "proxy": proxy_data,
+            "cookies": cookies_data,
+            "extraction": extraction_data
+        })
+    }
+
+def handle_download_url(url, fmt, **kwargs):
     """
     New endpoint: Returns direct YouTube download URL without downloading the video.
     This avoids the 5-minute API Gateway timeout for large videos.
@@ -160,11 +415,12 @@ def handle_download_url(url, fmt):
     logger.info("Getting direct download URL", extra={
         "event": "download_url_start",
         "url": url,
-        "format": fmt
+        "format": fmt,
+        "config_overrides": kwargs
     })
     start_time = time.time()
 
-    ydl_opts = get_yt_dlp_opts(fmt=fmt)
+    ydl_opts = get_yt_dlp_opts(fmt=fmt, **kwargs)
 
     with YoutubeDL(ydl_opts) as ydl:
         logger.info("Extracting video info...")
@@ -292,12 +548,13 @@ def handle_download_url(url, fmt):
             })
         }
 
-def handle_download(url, fmt):
+def handle_download(url, fmt, **kwargs):
     start_time = time.time()
     logger.info("Starting download", extra={
         "event": "download_start",
         "url": url,
-        "format": fmt
+        "format": fmt,
+        "config_overrides": kwargs
     })
 
     video_id = str(uuid.uuid4())
@@ -305,15 +562,11 @@ def handle_download(url, fmt):
     file_name = f"{str(uuid.uuid4())}.{ext}"
     download_path = os.path.join(STORAGE_PATH, file_name)
 
-    ydl_opts = get_yt_dlp_opts(download_path=download_path, fmt=fmt)
+    ydl_opts = get_yt_dlp_opts(download_path=download_path, fmt=fmt, **kwargs)
 
     with YoutubeDL(ydl_opts) as ydl:
         logger.info("Getting video info...")
-        info = ydl.extract_info(url, download=False)
-        # logger.info(json.dumps(info.get("formats", []), indent=2))
-
-        logger.info("Starting downloading...")
-        ydl.download([url])
+        ydl.extract_info(url, download=True)
 
     public_url = f"https://storage.yandexcloud.net/{BUCKET_NAME}/{file_name}"
 
@@ -329,23 +582,29 @@ def handle_download(url, fmt):
         "body": json.dumps({"url": public_url})
     }
 
-def handle_info(url):
-    logger.info("Getting video info", extra={"event": "info_start", "url": url})
+def handle_info(url, **kwargs):
+    # Process 'process' param separately if provided
+    process = kwargs.pop("process", True)
+    
+    logger.info("Getting video info", extra={
+        "event": "info_start", 
+        "url": url, 
+        "extraction_process": process,
+        "config_overrides": kwargs
+    })
     start_time = time.time()
-    ydl_opts = get_yt_dlp_opts()
+    ydl_opts = get_yt_dlp_opts(**kwargs)
 
     with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+        info = ydl.extract_info(url, download=False, process=process)
+        info["full_info"] = process
 
-    # logger.info("Scraping youtube video title...")
-    # title = scrape_video_title(url)
-    # logger.info("Scraped youtube title:", title)
-    # info["title"] = title
-
-    logger.info("Returning full video info...", extra={
+    # Return the full info object (which includes title, formats if found, etc.)
+    logger.info("Returning video info", extra={
         "event": "info_success",
         "url": url,
-        "duration": time.time() - start_time
+        "duration": time.time() - start_time,
+        "is_full": info.get("full_info", False)
     })
     return {
         "statusCode": 200,
