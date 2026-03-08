@@ -7,7 +7,7 @@ from yt_dlp import YoutubeDL
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from env import PROXY_URL
-from main import get_yt_dlp_opts, handle_health_proxy, handle_health_cookies, handle_health_full, handle_health_extraction, handle_info
+from main import get_yt_dlp_opts, handle_health_proxy, handle_health_cookies, handle_health_full, handle_info
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -25,11 +25,6 @@ async def health_proxy():
 @app.get("/health/cookies")
 async def health_cookies():
     res = handle_health_cookies()
-    return JSONResponse(content=json.loads(res["body"]), status_code=res["statusCode"])
-
-@app.get("/health/extraction")
-async def health_extraction():
-    res = handle_health_extraction()
     return JSONResponse(content=json.loads(res["body"]), status_code=res["statusCode"])
 
 @app.get("/health/full")

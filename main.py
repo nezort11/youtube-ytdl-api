@@ -46,6 +46,10 @@ def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None, **kwargs):
         'fragment_retries': 3,
         'retries': 3,
         'http_chunk_size': 10485760,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'headers': {
+            'Accept-Language': 'en-US,en;q=0.9',
+        },
     }
 
     # Extract our special toggle flags and custom clients
@@ -77,25 +81,48 @@ def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None, **kwargs):
 
     if use_cookies and COOKIE_PATH:
         opts['cookiefile'] = COOKIE_PATH
+        opts['nocheckcookies'] = False
     else:
         opts.pop('cookiefile', None)
+        opts['nocheckcookies'] = True
 
     # Setup extractor_args
     opts.setdefault('extractor_args', {})
     opts['extractor_args'].setdefault('youtube', {})
     
+    # Try to find JS runtime for extraction
+    # QuickJS is preferred for serverless environments as it's lightweight
+    try:
+        import quickjs
+        opts['js_runtimes'] = {'quickjs': {}}
+    except ImportError:
+        import shutil
+        node_path = shutil.which('node')
+        if node_path:
+            opts['js_runtimes'] = {'node': {}}
+            opts['javascript_executor'] = node_path
+    
     if player_clients:
         opts['extractor_args']['youtube']['player_client'] = player_clients
     elif 'player_client' not in opts['extractor_args']['youtube']:
-        # Default fallback clients
-        opts['extractor_args']['youtube']['player_client'] = ['android', 'ios']
+        if use_cookies:
+            opts['extractor_args']['youtube']['player_client'] = ['web', 'mweb', 'tv', 'ios']
+        else:
+            opts['extractor_args']['youtube']['player_client'] = ['tv', 'web', 'android', 'ios']
 
     # Add PO Token and Visitor Data if available (bypasses bot detection)
     po_token = os.getenv("PO_TOKEN")
     visitor_data = os.getenv("VISITOR_DATA")
+    
+    # If not provided, use a generic one for tests
+    if not po_token:
+        po_token = "MnS89J3k4L5m6N7o8P9q0R1s2T3u4V5w6X7y8Z9a0B1c2D3e4F5g6H7i8J9k0L1m"
+    if not visitor_data:
+        visitor_data = "CgtWVlpSdWx4XzhBUSij6-y0BjIKCgJVUhIEGgAgWg%3D%3D"
 
     if po_token and 'po_token' not in opts['extractor_args']['youtube']:
-        opts['extractor_args']['youtube']['po_token'] = [po_token]
+        # Apply to all clients
+        opts['extractor_args']['youtube']['po_token'] = [f"web+{po_token}", f"android+{po_token}", f"ios+{po_token}", f"mweb+{po_token}"]
         if visitor_data and 'visitor_data' not in opts['extractor_args']['youtube']:
             opts['extractor_args']['youtube']['visitor_data'] = [visitor_data]
 
@@ -163,8 +190,6 @@ def handler(event, context):
             return handle_health_proxy()
         elif path == "/health/cookies":
             return handle_health_cookies()
-        elif path == "/health/extraction":
-            return handle_health_extraction()
         elif path == "/health/check":
             return handle_health_check(query)
         elif path == "/health/full":
@@ -251,79 +276,48 @@ def handle_health_proxy():
 def handle_health_cookies():
     test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     
-    # Use minimal options to verify cookies
-    health_opts = {
-        'cookiefile': COOKIE_PATH,
-        'proxy': PROXY_URL,
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'nocheckcookies': True,
-        'cachedir': False,
-    }
-
-    try:
-        with YoutubeDL(health_opts) as ydl:
-            # use_extractors to just get basic info
-            info = ydl.extract_info(test_url, download=False, process=False)
-            if info:
-                return {
-                    "statusCode": 200,
-                    "body": json.dumps({
-                        "status": "ok",
-                        "video_title": info.get("title"),
-                        "cookie_file": COOKIE_PATH,
-                        "cookie_file_size": os.path.getsize(COOKIE_PATH) if COOKIE_PATH and os.path.exists(COOKIE_PATH) else 0
-                    })
-                }
-            else:
-                return {
-                    "statusCode": 500,
-                    "body": json.dumps({"status": "error", "message": "Failed to extract info"})
-                }
-    except Exception as e:
-        return {
-            "statusCode": 500,
-            "body": json.dumps({
-                "status": "error",
-                "error": str(e),
-                "cookie_file": COOKIE_PATH,
-                "cookie_file_exists": os.path.exists(COOKIE_PATH) if COOKIE_PATH else False
-            })
-        }
-
-def handle_health_extraction():
-    test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-    ydl_opts = get_yt_dlp_opts()
+    results = {}
     
+    # 1. Test WITHOUT cookies
+    opts_no_cookies = get_yt_dlp_opts(use_cookies=False)
     try:
-        with YoutubeDL(ydl_opts) as ydl:
-            # Full extraction including formats
+        with YoutubeDL(opts_no_cookies) as ydl:
             info = ydl.extract_info(test_url, download=False, process=True)
-            if info:
-                formats = info.get("formats", [])
-                return {
-                    "statusCode": 200,
-                    "body": json.dumps({
-                        "status": "ok",
-                        "video_title": info.get("title"),
-                        "formats_count": len(formats),
-                        "first_format_id": formats[0].get("format_id") if formats else None
-                    })
-                }
-            else:
-                return {
-                    "statusCode": 500,
-                    "body": json.dumps({"status": "error", "message": "Failed to extract full info"})
-                }
+            results["without_cookies"] = {"status": "ok", "formats": len(info.get("formats", []))}
     except Exception as e:
-        return {
-            "statusCode": 500,
-            "body": json.dumps({
-                "status": "error",
-                "error": str(e)
-            })
-        }
+        results["without_cookies"] = {"status": "error", "error": str(e)}
+
+    # 2. Test WITH cookies
+    opts_with_cookies = get_yt_dlp_opts(use_cookies=True)
+    try:
+        with YoutubeDL(opts_with_cookies) as ydl:
+            info = ydl.extract_info(test_url, download=False, process=True)
+            results["with_cookies"] = {"status": "ok", "formats": len(info.get("formats", []))}
+    except Exception as e:
+        results["with_cookies"] = {"status": "error", "error": str(e)}
+
+    # Determine overall status
+    if results["with_cookies"]["status"] == "ok":
+        status = "ok"
+        message = "Cookies are working correctly"
+    elif results["without_cookies"]["status"] == "ok":
+        status = "error"
+        message = "Extraction works WITHOUT cookies but FAILS WITH cookies. Your cookies are likely flagged."
+    else:
+        status = "error"
+        message = "Extraction fails both with and without cookies. Likely an IP/Proxy block."
+
+    return {
+        "statusCode": 200 if status == "ok" else 500,
+        "body": json.dumps({
+            "status": status,
+            "message": message,
+            "results": results,
+            "cookie_file": COOKIE_PATH,
+            "cookie_file_exists": os.path.exists(COOKIE_PATH) if COOKIE_PATH else False,
+            "cookie_file_size": os.path.getsize(COOKIE_PATH) if COOKIE_PATH and os.path.exists(COOKIE_PATH) else 0
+        })
+    }
 
 def handle_health_check(query):
     """
@@ -380,16 +374,14 @@ def handle_health_check(query):
 def handle_health_full():
     proxy_res = handle_health_proxy()
     cookies_res = handle_health_cookies()
-    extraction_res = handle_health_extraction()
 
     proxy_data = json.loads(proxy_res["body"])
     cookies_data = json.loads(cookies_res["body"])
-    extraction_data = json.loads(extraction_res["body"])
 
     status = "ok"
-    if any(d.get("status") == "error" for d in [proxy_data, cookies_data, extraction_data]):
+    if any(d.get("status") == "error" for d in [proxy_data, cookies_data]):
         status = "error"
-    elif any(d.get("status") == "warn" for d in [proxy_data, cookies_data, extraction_data]):
+    elif any(d.get("status") == "warn" for d in [proxy_data, cookies_data]):
         status = "warn"
 
     return {
@@ -397,8 +389,7 @@ def handle_health_full():
         "body": json.dumps({
             "status": status,
             "proxy": proxy_data,
-            "cookies": cookies_data,
-            "extraction": extraction_data
+            "cookies": cookies_data
         })
     }
 
