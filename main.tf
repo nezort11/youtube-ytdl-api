@@ -74,7 +74,7 @@ resource "yandex_function" "ytdl-function" {
   }
   mounts {
     name = "env"
-    mode = "ro"
+    mode = "rw"
     object_storage {
       bucket = yandex_storage_bucket.ytdl-env.bucket
     }
@@ -112,6 +112,24 @@ paths:
         function_id: ${yandex_function.ytdl-function.id}
         service_account_id: ${var.service_account_id}
   /ping:
+    get:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${yandex_function.ytdl-function.id}
+        service_account_id: ${var.service_account_id}
+  /health/proxy:
+    get:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${yandex_function.ytdl-function.id}
+        service_account_id: ${var.service_account_id}
+  /health/cookies:
+    get:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${yandex_function.ytdl-function.id}
+        service_account_id: ${var.service_account_id}
+  /health/full:
     get:
       x-yc-apigateway-integration:
         type: cloud_functions

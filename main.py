@@ -24,6 +24,7 @@ STORAGE_PATH = "./downloads" if ENV == "development" else "/function/storage/sto
 ENV_PATH = "env" if ENV == "development" else "/function/storage/env"
 
 COOKIE_PATH = os.path.join(ENV_PATH, 'cookies.txt')
+
 logger.info(f"COOKIE_PATH: {COOKIE_PATH}")
 if os.path.exists(COOKIE_PATH):
     logger.info(f"Cookie file found. Size: {os.path.getsize(COOKIE_PATH)} bytes")
@@ -36,6 +37,7 @@ def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None):
     opts = {
         'proxy': PROXY_URL,
         'cookiefile': COOKIE_PATH,
+        'nocheckcookies': True,
         'cachedir': False,
         'noplaylist': False if playlistend else True,  # allow playlists
         # Optimize for speed
@@ -45,7 +47,7 @@ def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None):
         'http_chunk_size': 10485760,  # 10MB chunks for better throughput
         'extractor_args': {
             'youtube': {
-                'player_client': ['android'], # Use ONLY android as it is most reliable for n-sig
+                'player_client': ['android', 'web'],
             }
         },
     }
@@ -83,6 +85,13 @@ def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None):
             # Merge video+audio into single file if needed
             'merge_output_format': 'mp4',
         })
+    elif fmt:
+        # If specific format is requested even for info, set it
+        opts['format'] = fmt
+    else:
+        # Default for info-only requests - explicitly set to something that always exists
+        opts['format'] = 'bestvideo+bestaudio/best'
+    
     if playlistend:
         opts['playlistend'] = playlistend
     return opts
@@ -110,7 +119,7 @@ def handler(event, context):
     url = query.get("url")
     fmt = query.get("format")  # Default None -> will use format 18 (360p) fallback
 
-    if not url and path not in ["/ping"]:
+    if not url and path not in ["/ping", "/health/proxy", "/health/cookies", "/health/full"]:
         return {
             "statusCode": 400,
             "body": json.dumps({"error": "Missing 'url' parameter"})
@@ -130,6 +139,12 @@ def handler(event, context):
             return handle_playlist(url, limit)
         elif path == "/ping":
             return handle_ping()
+        elif path == "/health/proxy":
+            return handle_health_proxy()
+        elif path == "/health/cookies":
+            return handle_health_cookies()
+        elif path == "/health/full":
+            return handle_health_full()
         else:
             return {
                 "statusCode": 404,
@@ -145,6 +160,134 @@ def handle_ping():
     return {
         "statusCode": 200,
         "body": json.dumps({"status": "ok", "message": "pong"})
+    }
+
+def handle_health_proxy():
+    import urllib.request
+    import json
+    if not PROXY_URL:
+        logger.warning("PROXY_URL not configured")
+        return {
+            "statusCode": 200,
+            "body": json.dumps({"status": "warn", "message": "PROXY_URL not configured"})
+        }
+
+    try:
+        # 1. Get IP without proxy
+        # We use a custom opener with no proxies to ensure we get the real IP
+        no_proxy_handler = urllib.request.ProxyHandler({})
+        no_proxy_opener = urllib.request.build_opener(no_proxy_handler)
+        
+        logger.info("Checking IP without proxy...")
+        no_proxy_response = no_proxy_opener.open('https://api.ipify.org?format=json', timeout=10)
+        no_proxy_data = json.loads(no_proxy_response.read().decode())
+        no_proxy_ip = no_proxy_data.get("ip")
+        logger.info(f"IP without proxy: {no_proxy_ip}")
+
+        # 2. Get IP with proxy
+        logger.info(f"Checking IP with proxy: {PROXY_URL}")
+        proxy_handler = urllib.request.ProxyHandler({'http': PROXY_URL, 'https': PROXY_URL})
+        proxy_opener = urllib.request.build_opener(proxy_handler)
+        proxy_response = proxy_opener.open('https://api.ipify.org?format=json', timeout=10)
+        proxy_data = json.loads(proxy_response.read().decode())
+        proxy_ip = proxy_data.get("ip")
+        logger.info(f"IP with proxy: {proxy_ip}")
+
+        if no_proxy_ip == proxy_ip:
+            error_msg = f"Proxy is NOT working! Both IPs are the same: {proxy_ip}"
+            logger.error(error_msg)
+            return {
+                "statusCode": 500, # Return 500 as the proxy check failed to mask IP
+                "body": json.dumps({
+                    "status": "error",
+                    "message": error_msg,
+                    "no_proxy_ip": no_proxy_ip,
+                    "proxy_ip": proxy_ip
+                })
+            }
+
+        logger.info("Proxy is working correctly.")
+        return {
+            "statusCode": 200,
+            "body": json.dumps({
+                "status": "ok",
+                "message": "Proxy is working",
+                "no_proxy_ip": no_proxy_ip,
+                "proxy_ip": proxy_ip
+            })
+        }
+    except Exception as e:
+        error_msg = f"Proxy health check failed: {str(e)}"
+        logger.exception(error_msg)
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"status": "error", "error": error_msg})
+        }
+
+def handle_health_cookies():
+    test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    
+    # Use minimal options to verify cookies
+    health_opts = {
+        'cookiefile': COOKIE_PATH,
+        'proxy': PROXY_URL,
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'nocheckcookies': True,
+        'cachedir': False,
+    }
+
+    try:
+        with YoutubeDL(health_opts) as ydl:
+            # use_extractors to just get basic info
+            info = ydl.extract_info(test_url, download=False, process=False)
+            if info:
+                return {
+                    "statusCode": 200,
+                    "body": json.dumps({
+                        "status": "ok",
+                        "video_title": info.get("title"),
+                        "cookie_file": COOKIE_PATH,
+                        "cookie_file_size": os.path.getsize(COOKIE_PATH) if COOKIE_PATH and os.path.exists(COOKIE_PATH) else 0
+                    })
+                }
+            else:
+                return {
+                    "statusCode": 500,
+                    "body": json.dumps({"status": "error", "message": "Failed to extract info"})
+                }
+    except Exception as e:
+        return {
+            "statusCode": 500,
+            "body": json.dumps({
+                "status": "error",
+                "error": str(e),
+                "cookie_file": COOKIE_PATH,
+                "cookie_file_exists": os.path.exists(COOKIE_PATH) if COOKIE_PATH else False
+            })
+        }
+
+def handle_health_full():
+    proxy_res = handle_health_proxy()
+    cookies_res = handle_health_cookies()
+
+    proxy_data = json.loads(proxy_res["body"])
+    cookies_data = json.loads(cookies_res["body"])
+
+    status = "ok"
+    if proxy_data.get("status") == "error" or cookies_data.get("status") == "error":
+        status = "error"
+    elif proxy_data.get("status") == "warn" or cookies_data.get("status") == "warn":
+        status = "warn"
+
+    return {
+        "statusCode": 200 if status != "error" else 500,
+        "body": json.dumps({
+            "status": status,
+            "proxy": proxy_data,
+            "cookies": cookies_data
+        })
     }
 
 def handle_download_url(url, fmt):

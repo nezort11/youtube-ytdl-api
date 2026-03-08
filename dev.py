@@ -7,7 +7,7 @@ from yt_dlp import YoutubeDL
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse, JSONResponse
 from env import PROXY_URL
-from main import get_yt_dlp_opts
+from main import get_yt_dlp_opts, handle_health_proxy, handle_health_cookies, handle_health_full
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -16,6 +16,21 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+
+@app.get("/health/proxy")
+async def health_proxy():
+    res = handle_health_proxy()
+    return JSONResponse(content=json.loads(res["body"]), status_code=res["statusCode"])
+
+@app.get("/health/cookies")
+async def health_cookies():
+    res = handle_health_cookies()
+    return JSONResponse(content=json.loads(res["body"]), status_code=res["statusCode"])
+
+@app.get("/health/full")
+async def health_full():
+    res = handle_health_full()
+    return JSONResponse(content=json.loads(res["body"]), status_code=res["statusCode"])
 
 @app.get("/download")
 async def download_video(url: str = Query(..., title="YouTube Video URL")):
