@@ -17,3 +17,11 @@ For this project, please follow these specific rules:
 
 ## Health Checks
 - **Proxy Status:** Call the `/health/proxy` or `/health/full` endpoints to verify that the proxy is active and correctly masking the source IP.
+
+## Tooling
+- **Available Tools:** The following tools are available, configured, and can be used:
+  - `git`: For version control.
+  - `gh`: GitHub CLI for repository and workflow management.
+  - `yc`: Yandex Cloud CLI for managing cloud resources.
+  - `terraform`: For infrastructure as code.
+  - `make`: For project-specific commands and automation.

@@ -1,13 +1,12 @@
 #!/bin/bash
 set -e
 
-# echo "📦 Installing dependencies..."
-# mkdir -p build
-# pip install -r requirements.txt --target build
+echo "📦 Installing dependencies..."
+mkdir -p ./build
+./.venv/bin/pip install -r requirements.txt --target ./build
 
 echo "🧱 Copying source files..."
-mkdir -p ./build
-cp *.py requirements.txt build/
+cp *.py build/
 
 echo "🧩 Creating zip..."
 cd build

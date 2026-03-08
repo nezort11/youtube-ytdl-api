@@ -4,10 +4,10 @@ import uuid
 import json
 from yt_dlp import YoutubeDL
 # FastAPI
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from env import PROXY_URL
-from main import get_yt_dlp_opts, handle_health_proxy, handle_health_cookies, handle_health_full
+from main import get_yt_dlp_opts, handle_health_proxy, handle_health_cookies, handle_health_full, handle_health_extraction, handle_info
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -27,44 +27,90 @@ async def health_cookies():
     res = handle_health_cookies()
     return JSONResponse(content=json.loads(res["body"]), status_code=res["statusCode"])
 
+@app.get("/health/extraction")
+async def health_extraction():
+    res = handle_health_extraction()
+    return JSONResponse(content=json.loads(res["body"]), status_code=res["statusCode"])
+
 @app.get("/health/full")
 async def health_full():
     res = handle_health_full()
     return JSONResponse(content=json.loads(res["body"]), status_code=res["statusCode"])
 
+@app.get("/health/check")
+async def health_check(
+    proxy: str = "true",
+    cookies: str = "true",
+    process: str = "true",
+    clients: str = None,
+    url: str = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+):
+    query = {
+        "proxy": proxy,
+        "cookies": cookies,
+        "process": process,
+        "clients": clients,
+        "url": url
+    }
+    from main import handle_health_check
+    res = handle_health_check(query)
+    return JSONResponse(content=json.loads(res["body"]), status_code=res["statusCode"])
+
 @app.get("/download")
-async def download_video(url: str = Query(..., title="YouTube Video URL")):
+async def download_video(
+    url: str = Query(..., title="YouTube Video URL"),
+    fmt: str = None,
+    proxy: str = "true",
+    cookies: str = "true",
+    clients: str = None
+):
     """
     Download a YouTube video and return the file.
     """
-    logger.info('Inside download video endpoint')
-    ydl_opts = {
-        'outtmpl': os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s'),
-        'format': '18',
-        'proxy': PROXY_URL,
-        'cookiefile': 'env/cookies.txt',
-         # 'merge_output_format': 'mp4',
+    overrides = {
+        "use_proxy": proxy.lower() == "true",
+        "use_cookies": cookies.lower() == "true",
     }
+    if clients:
+        overrides["player_clients"] = clients.split(",")
 
-    logger.info('Started downloading...')
+    logger.info(f'Inside download video endpoint with overrides: {overrides}')
+    
+    # Generate temporary path for local download
+    video_id = str(uuid.uuid4())
+    ext = "m4a" if fmt == "m4a" else "mp4"
+    filename = os.path.join(DOWNLOAD_FOLDER, f"{video_id}.{ext}")
+
+    ydl_opts = get_yt_dlp_opts(download_path=filename, fmt=fmt, **overrides)
+
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        filename = ydl.prepare_filename(info).rsplit(".", 1)[0] + ".mp4"
+        ydl.download([url])
 
     logger.info('Returning file response...')
     return FileResponse(filename, media_type='video/mp4', filename=os.path.basename(filename))
 
 @app.get("/info")
-async def get_video_info(url: str = Query(...)):
+async def get_video_info(
+    url: str = Query(...),
+    proxy: str = "true",
+    cookies: str = "true",
+    clients: str = None,
+    process: str = "true"
+):
     if not url:
         raise HTTPException(status_code=400, detail="Missing 'url' parameter")
 
-    ydl_opts = get_yt_dlp_opts()
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    overrides = {
+        "use_proxy": proxy.lower() == "true",
+        "use_cookies": cookies.lower() == "true",
+        "process": process.lower() == "true"
+    }
+    if clients:
+        overrides["player_clients"] = clients.split(",")
 
-    logger.info('Returning full video info...')
-    return JSONResponse(content=info)
+    # Use handle_info from main.py
+    res = handle_info(url, **overrides)
+    return JSONResponse(content=json.loads(res["body"]), status_code=res["statusCode"])
 
 @app.get("/playlist")
 async def get_playlist_info(
@@ -78,8 +124,6 @@ async def get_playlist_info(
         raise HTTPException(status_code=400, detail="Missing 'url' parameter")
 
     ydl_opts = get_yt_dlp_opts(playlistend=limit)
-    # ydl_opts = get_yt_dlp_opts(playliststart=offset + 1, playlistend=offset + limit)
-    # ydl_opts["playlistreverse"] = True
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
 
@@ -111,4 +155,3 @@ if __name__ == "__main__":
     import uvicorn
     logger.info('Starting uvicorn server...')
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
