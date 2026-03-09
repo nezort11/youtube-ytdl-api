@@ -1,16 +1,16 @@
 #!/bin/bash
-# dev-sdk.sh - CLI utility to call ytdl cloud function endpoints
+# ytdl-sdk-cli.sh - CLI utility to call ytdl cloud function endpoints
 # 
 # Usage:
-#   ./dev-sdk.sh info <youtube_url>
-#   ./dev-sdk.sh download-url <youtube_url> [format]
-#   ./dev-sdk.sh download <youtube_url> [format]
-#   ./dev-sdk.sh playlist <youtube_url> [limit]
+#   ./ytdl-sdk-cli.sh info <youtube_url>
+#   ./ytdl-sdk-cli.sh download-url <youtube_url> [format]
+#   ./ytdl-sdk-cli.sh download <youtube_url> [format]
+#   ./ytdl-sdk-cli.sh playlist <youtube_url> [limit]
 #
 # Examples:
-#   ./dev-sdk.sh info "https://www.youtube.com/watch?v=224plb3bCog"
-#   ./dev-sdk.sh download-url "https://www.youtube.com/watch?v=224plb3bCog"
-#   ./dev-sdk.sh playlist "https://www.youtube.com/playlist?list=PLsVXlJ_NFVRgSSr6ki-BThf7CY3mTMEHI" 5
+#   ./ytdl-sdk-cli.sh info "https://www.youtube.com/watch?v=224plb3bCog"
+#   ./ytdl-sdk-cli.sh download-url "https://www.youtube.com/watch?v=224plb3bCog"
+#   ./ytdl-sdk-cli.sh playlist "https://www.youtube.com/playlist?list=PLsVXlJ_NFVRgSSr6ki-BThf7CY3mTMEHI" 5
 
 set -e
 
