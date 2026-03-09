@@ -83,64 +83,64 @@ resource "yandex_function" "ytdl-function" {
 
 # API Gateway is commented out because it has a hard 60-second timeout.
 # We prefer using regular function direct calling for long-running tasks.
-# resource "yandex_api_gateway" "ytdl-function-gateway" {
-#   name        = "ytdl-function-gateway"
-#   description = "API Gateway for ytdl-function"
-# 
-#   spec = <<EOF
-# openapi: 3.0.0
-# info:
-#   title: ytdl-function-gateway
-#   version: 1.0.0
-# paths:
-#   /download:
-#     post:
-#       x-yc-apigateway-integration:
-#         type: cloud_functions
-#         function_id: ${yandex_function.ytdl-function.id}
-#         service_account_id: ${var.service_account_id}
-#   /download-url:
-#     get:
-#       summary: Get direct YouTube download URL (no gateway timeout)
-#       x-yc-apigateway-integration:
-#         type: cloud_functions
-#         function_id: ${yandex_function.ytdl-function.id}
-#         service_account_id: ${var.service_account_id}
-#   /info:
-#     get:
-#       x-yc-apigateway-integration:
-#         type: cloud_functions
-#         function_id: ${yandex_function.ytdl-function.id}
-#         service_account_id: ${var.service_account_id}
-#   /ping:
-#     get:
-#       x-yc-apigateway-integration:
-#         type: cloud_functions
-#         function_id: ${yandex_function.ytdl-function.id}
-#         service_account_id: ${var.service_account_id}
-#   /health/proxy:
-#     get:
-#       x-yc-apigateway-integration:
-#         type: cloud_functions
-#         function_id: ${yandex_function.ytdl-function.id}
-#         service_account_id: ${var.service_account_id}
-#   /health/cookies:
-#     get:
-#       x-yc-apigateway-integration:
-#         type: cloud_functions
-#         function_id: ${yandex_function.ytdl-function.id}
-#         service_account_id: ${var.service_account_id}
-#   /health/full:
-#     get:
-#       x-yc-apigateway-integration:
-#         type: cloud_functions
-#         function_id: ${yandex_function.ytdl-function.id}
-#         service_account_id: ${var.service_account_id}
-#   /playlist:
-#     get:
-#       x-yc-apigateway-integration:
-#         type: cloud_functions
-#         function_id: ${yandex_function.ytdl-function.id}
-#         service_account_id: ${var.service_account_id}
-# EOF
-# }
+resource "yandex_api_gateway" "ytdl-function-gateway" {
+  name        = "ytdl-function-gateway"
+  description = "API Gateway for ytdl-function"
+
+  spec = <<EOF
+openapi: 3.0.0
+info:
+  title: ytdl-function-gateway
+  version: 1.0.0
+paths:
+  /download:
+    post:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${yandex_function.ytdl-function.id}
+        service_account_id: ${var.service_account_id}
+  /download-url:
+    get:
+      summary: Get direct YouTube download URL (no gateway timeout)
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${yandex_function.ytdl-function.id}
+        service_account_id: ${var.service_account_id}
+  /info:
+    get:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${yandex_function.ytdl-function.id}
+        service_account_id: ${var.service_account_id}
+  /ping:
+    get:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${yandex_function.ytdl-function.id}
+        service_account_id: ${var.service_account_id}
+  /health/proxy:
+    get:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${yandex_function.ytdl-function.id}
+        service_account_id: ${var.service_account_id}
+  /health/cookies:
+    get:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${yandex_function.ytdl-function.id}
+        service_account_id: ${var.service_account_id}
+  /health/full:
+    get:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${yandex_function.ytdl-function.id}
+        service_account_id: ${var.service_account_id}
+  /playlist:
+    get:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${yandex_function.ytdl-function.id}
+        service_account_id: ${var.service_account_id}
+EOF
+}
