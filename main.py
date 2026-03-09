@@ -91,8 +91,8 @@ def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None, **kwargs):
     opts['extractor_args'].setdefault('youtube', {})
     
     # JS Runtime selection for YouTube "n-challenge" solving
-    # WE USE DENO instead of Node and QuickJS because it is lightweight, 
-    # easy to bundle in serverless functions, and works correctly with modern YouTube challenges.
+    # WE USE DENO because it is lightweight, easy to bundle in serverless functions, 
+    # and works correctly with modern YouTube challenges where Node/QuickJS might fail.
     import shutil
     # Look for deno in the function directory or PATH
     deno_path = shutil.which('deno') or (os.path.join(os.getcwd(), 'deno') if os.path.exists(os.path.join(os.getcwd(), 'deno')) else None)
@@ -101,19 +101,7 @@ def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None, **kwargs):
         opts['js_runtimes'] = {'deno': {}}
         logger.info(f"Using Deno ({deno_path}) for JS extraction")
     else:
-        # Fallbacks commented out as requested
-        # node_path = shutil.which('node')
-        # if node_path:
-        #     opts['js_runtimes'] = {'node': {}}
-        #     opts['javascript_executor'] = node_path
-        #     logger.info(f"Using Node ({node_path}) for JS extraction")
-        # else:
-        #     try:
-        #         import quickjs
-        #         opts['js_runtimes'] = {'quickjs': {}}
-        #         logger.info("Using QuickJS for JS extraction")
-        #     except ImportError:
-        logger.warning("Deno binary not found! Extraction will likely fail for YouTube.")
+        logger.warning("Deno binary not found! YouTube extraction will likely fail.")
     
     if player_clients:
         opts['extractor_args']['youtube']['player_client'] = player_clients
