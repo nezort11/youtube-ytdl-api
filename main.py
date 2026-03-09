@@ -90,17 +90,18 @@ def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None, **kwargs):
     opts.setdefault('extractor_args', {})
     opts['extractor_args'].setdefault('youtube', {})
     
-    # Try to find JS runtime for extraction
-    # QuickJS is preferred for serverless environments as it's lightweight
-    try:
-        import quickjs
-        opts['js_runtimes'] = {'quickjs': {}}
-    except ImportError:
-        import shutil
-        node_path = shutil.which('node')
-        if node_path:
-            opts['js_runtimes'] = {'node': {}}
-            opts['javascript_executor'] = node_path
+    # JS Runtime selection for YouTube "n-challenge" solving
+    # WE USE DENO because it is lightweight, easy to bundle in serverless functions, 
+    # and works correctly with modern YouTube challenges where Node/QuickJS might fail.
+    import shutil
+    # Look for deno in the function directory or PATH
+    deno_path = shutil.which('deno') or (os.path.join(os.getcwd(), 'deno') if os.path.exists(os.path.join(os.getcwd(), 'deno')) else None)
+
+    if deno_path:
+        opts['js_runtimes'] = {'deno': {}}
+        logger.info(f"Using Deno ({deno_path}) for JS extraction")
+    else:
+        logger.warning("Deno binary not found! YouTube extraction will likely fail.")
     
     if player_clients:
         opts['extractor_args']['youtube']['player_client'] = player_clients
@@ -128,8 +129,9 @@ def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None, **kwargs):
 
     if download_path:
         # Use flexible format selector with fallbacks
+        # Format 18 is a very reliable combined format (360p) that usually works even when higher qualities are restricted or missing
         if fmt and fmt not in ["best", "worst"]:
-            format_selector = f"{fmt}/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/worst"
+            format_selector = f"{fmt}/18/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/worst"
         else:
             format_selector = "18/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/worst"
 
@@ -139,7 +141,12 @@ def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None, **kwargs):
             'merge_output_format': opts.get('merge_output_format', 'mp4'),
         })
     elif fmt:
-        opts['format'] = opts.get('format', fmt)
+        # For non-download requests (like /info), use a broad but safe format string if no specific format is requested
+        # This helps avoid 'format not available' errors
+        opts['format'] = opts.get('format', f"{fmt}/18/best/worst" if fmt not in ["best", "worst"] else fmt)
+    else:
+        # Default format for extraction if none specified
+        opts['format'] = '18/bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/worst'
     
     if playlistend:
         opts['playlistend'] = playlistend

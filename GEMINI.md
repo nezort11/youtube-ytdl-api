@@ -25,3 +25,6 @@ For this project, please follow these specific rules:
   - `yc`: Yandex Cloud CLI for managing cloud resources.
   - `terraform`: For infrastructure as code.
   - `make`: For project-specific commands and automation.
+
+## History Tracking
+- **REQUIRED:** Use `git mv` for all file and directory moves to ensure proper history tracking.
