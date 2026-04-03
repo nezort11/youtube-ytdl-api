@@ -10,7 +10,7 @@ cp *.py build/
 
 # Bundle Deno binary (required for YouTube JS challenge solving)
 # We check if it already exists in build/ to avoid redundant downloads.
-DENO_VERSION="v2.2.3"
+DENO_VERSION="v2.7.4"
 if [ ! -f "./build/deno" ]; then
     echo "🦕 Deno binary not found in build folder. Downloading $DENO_VERSION for Linux x64..."
     curl -L "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" -o ./build/deno.zip

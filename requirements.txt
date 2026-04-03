@@ -1,6 +1,6 @@
 # Must bump regularly cuz of youtube API changes
 # https://pypi.org/project/yt-dlp/
-yt-dlp>=2026.03.03
+yt-dlp>=2026.03.17
 python-dotenv
 python-json-logger
-yt-dlp-ejs>=0.4.0
+yt-dlp-ejs>=0.8.0
