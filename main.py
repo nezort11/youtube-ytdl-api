@@ -25,6 +25,9 @@ ENV_PATH = "env" if ENV == "development" else "/function/storage/env"
 
 COOKIE_PATH = os.path.join(ENV_PATH, 'cookies.txt')
 
+# Add current directory to PATH to help yt-dlp find deno and other binaries
+os.environ["PATH"] = os.getcwd() + os.pathsep + os.environ.get("PATH", "")
+
 logger.info(f"COOKIE_PATH: {COOKIE_PATH}")
 if os.path.exists(COOKIE_PATH):
     logger.info(f"Cookie file found. Size: {os.path.getsize(COOKIE_PATH)} bytes")
@@ -98,8 +101,12 @@ def get_yt_dlp_opts(download_path=None, fmt=None, playlistend=None, **kwargs):
     deno_path = shutil.which('deno') or (os.path.join(os.getcwd(), 'deno') if os.path.exists(os.path.join(os.getcwd(), 'deno')) else None)
 
     if deno_path:
+        # We assume deno is in PATH or current dir and yt-dlp will find it
+        # If it doesn't, it might need more help, but {f'deno:{path}': {}} was rejected in last run
         opts['js_runtimes'] = {'deno': {}}
-        logger.info(f"Using Deno ({deno_path}) for JS extraction")
+        # Enable remote components to download the latest JS solver script if needed
+        opts['remote_components'] = ['ejs:github']
+        logger.info(f"Using Deno ({deno_path}) for JS extraction with remote components")
     else:
         logger.warning("Deno binary not found! YouTube extraction will likely fail.")
     
